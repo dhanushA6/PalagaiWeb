@@ -8,9 +8,12 @@ import "../styles/ShapesList.css";
 import PerformanceOverlay from "./PerformanceOverlay";
 import { convertPerformanceDataToTamil, convertPerformanceDataToEnglish } from '../utils/tamilMapping';
 import { data } from "autoprefixer";
+import chokeSound from '../audio/chokeEffect.mp3';
 // Define the shapes list
 // const SHAPES = ['a', 'aa', 'e', 'ee',  'ka', 'ra', 'pa', 'maa', 'ow', 'oa', 'ba', 'da', 'la', 'kaa', 'may', 'ke', 'so'];
-const SHAPES = ['aa', 'a', 'e', 'ee',  'ka', 'ra', 'pa', 'maa', 'ow', 'oa'];
+const SHAPES = ['a', 'aa', 'i', 'u', 'e', 'ae', 'ai', 'o','oa', 'ow'];
+
+const TEMPLATE_LINE_WIDTH = 5;
 
 const ShapesList = () => {
   const [savedShapes, setSavedShapes] = useState([]); 
@@ -32,6 +35,7 @@ const ShapesList = () => {
   const [lineAccuracy, setLineAccuracy] = useState({});
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 1000, height: 300 });
   const [scaleFactor, setScaleFactor] = useState(1);
+  
   const [templateBounds, setTemplateBounds] = useState({ minX: 0, minY: 0, maxX: 1000, maxY: 500 });
   const [currentShapeIndex, setCurrentShapeIndex] = useState(0);
   const [isGameComplete, setIsGameComplete] = useState(false);
@@ -47,6 +51,9 @@ const ShapesList = () => {
   const stageRef = useRef(null);
   const containerRef = useRef(null);
   const navigate = useNavigate();
+  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+  const audioRef = useRef(new Audio(chokeSound));
+  const audioIntervalRef = useRef(null);
 
   // Load all shapes on component mount
   useEffect(() => {
@@ -76,7 +83,17 @@ const ShapesList = () => {
     loadAllShapes();
   }, []);
 
-  // Load performance data from localStorage on mount and when it changes
+  // Load performance data from localStorage on mount and when it changes 
+  const loadShapeData = async (shapeId) => {
+    try {
+      const shapeData = await import(`../data/${shapeId}.json`);
+      return shapeData.default || shapeData;
+    } catch (error) {
+      console.error(`Error loading shape data for ${shapeId}:`, error);
+      return null;
+    }
+  }; 
+  // load the data 
   useEffect(() => {
     const loadPerformanceData = () => {
       const storedData = localStorage.getItem('tamilLetterPerformance');
@@ -125,11 +142,28 @@ const ShapesList = () => {
     updateBounds();
   }, [currentShapeIndex, savedShapes]);
 
+
   // Reset states when shape changes
   useEffect(() => {
     resetStates();
-  }, [currentShapeIndex]);
+  }, [currentShapeIndex]); 
 
+
+    // Play audio when shape changes
+    useEffect(() => {
+      if (audioPlayerRef.current && getCurrentShape()) {
+        audioPlayerRef.current.playAudio();
+      }
+    }, [currentShapeIndex, isGameStarted]); 
+
+    const getCurrentShape = () => {
+      if (currentShapeIndex >= SHAPES.length) return null;
+      return savedShapes.find(shape => shape.id === SHAPES[currentShapeIndex]);
+    };
+  
+
+
+     
   // Update canvas dimensions on window resize
   useEffect(() => {
     const updateCanvasSize = () => {
@@ -153,26 +187,8 @@ const ShapesList = () => {
     };
   }, [templateBounds]);
 
-  // Play audio when shape changes
-  useEffect(() => {
-    if (audioPlayerRef.current && getCurrentShape()) {
-      audioPlayerRef.current.playAudio();
-    }
-  }, [currentShapeIndex, isGameStarted]);
-
-  const loadShapeData = async (shapeId) => {
-    try {
-      const shapeData = await import(`../data/${shapeId}.json`);
-      return shapeData.default || shapeData;
-    } catch (error) {
-      console.error(`Error loading shape data for ${shapeId}:`, error);
-      return null;
-    }
-  };
-
   // Calculate template bounds when a shape is selected
   const updateTemplateBounds = (shape) => { 
-    console.log("E", shape.id);
     if (shape && shape.shapes && shape.shapes.length > 0) {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       
@@ -188,7 +204,7 @@ const ShapesList = () => {
         }
       });
       
-      const padding = 20;
+      const padding = 50;
       setTemplateBounds({
         minX: minX - padding,
         minY: minY - padding,
@@ -208,24 +224,6 @@ const ShapesList = () => {
     const heightScale = height / templateHeight;
     
     return Math.min(widthScale, heightScale, 2);
-  };
-
-  // Scale template points to fit current canvas
-  const scalePoint = (point) => {
-    const bounds = templateBounds;
-    const centerX = (bounds.minX + bounds.maxX) / 2;
-    const centerY = (bounds.minY + bounds.maxY) / 2;
-    
-    const centeredX = point.x - centerX;
-    const centeredY = point.y - centerY;
-    
-    const canvasCenterX = canvasDimensions.width / 2;
-    const canvasCenterY = canvasDimensions.height / 2;
-    
-    return {
-      x: canvasCenterX + centeredX * scaleFactor,
-      y: canvasCenterY + centeredY * scaleFactor
-    };
   };
 
   // Scale a single coordinate
@@ -249,6 +247,7 @@ const ShapesList = () => {
     for (let i = 0; i < points.length; i += 2) {
       scaledPoints.push(scaleCoordinate(points[i], true));
       scaledPoints.push(scaleCoordinate(points[i + 1], false));
+
     }
     return scaledPoints;
   };
@@ -287,7 +286,36 @@ const ShapesList = () => {
 
     setCurrentPathIndex(pathIndex);
     let startTime = performance.now();
-    let duration = 5000 / animationSpeed;
+    const baseDuration = 2000;
+    const duration = baseDuration / animationSpeed;
+
+    // Get the points for the current stroke
+    const points = scalePoints(currentShape.shapes[pathIndex].points);
+    // Filter out points that are too close to each other
+    const filteredPoints = [];
+    const MIN_DISTANCE = 5 * scaleFactor; // Minimum distance between points
+    
+    for (let i = 0; i < points.length; i += 2) {
+      if (i === 0) {
+        // Always include the first point
+        filteredPoints.push(points[i], points[i + 1]);
+      } else {
+        const prevX = filteredPoints[filteredPoints.length - 2];
+        const prevY = filteredPoints[filteredPoints.length - 1];
+        const currentX = points[i];
+        const currentY = points[i + 1];
+        
+        // Calculate distance between current and previous point
+        const distance = Math.sqrt(
+          Math.pow(currentX - prevX, 2) + Math.pow(currentY - prevY, 2)
+        );
+        
+        // Only add point if it's far enough from the previous point
+        if (distance >= MIN_DISTANCE) {
+          filteredPoints.push(currentX, currentY);
+        }
+      }
+    }
 
     const animate = (time) => {
       if (!currentShape) {
@@ -308,7 +336,7 @@ const ShapesList = () => {
             setIsAnimating(false);
             setCursorMode("default");
           }
-        }, 500 / animationSpeed);
+        }, 50 / animationSpeed);
         return;
       }
 
@@ -317,6 +345,44 @@ const ShapesList = () => {
     };
 
     requestAnimationFrame(animate);
+  };
+
+  // Update getInterpolatedPoint to work with filtered points
+  const getInterpolatedPoint = (points, progress) => {
+    if (!points || points.length < 4) {
+      return { x: 0, y: 0 };
+    }
+
+    // Ensure progress is a valid number between 0 and 1
+    progress = Math.max(0, Math.min(1, progress));
+
+    const totalPoints = points.length / 2;
+    const targetIndex = Math.min(
+      Math.floor(progress * (totalPoints - 1)),
+      totalPoints - 2
+    );
+
+    // Ensure we have valid indices
+    if (targetIndex < 0 || targetIndex >= totalPoints - 1) {
+      return { x: 0, y: 0};
+    }
+
+    const x1 = points[targetIndex * 2];
+    const y1 = points[targetIndex * 2 + 1];
+    const x2 = points[(targetIndex + 1) * 2];
+    const y2 = points[(targetIndex + 1) * 2 + 1];
+
+    // Validate that all coordinates are valid numbers
+    if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) {
+      return { x: 0, y: 0 };
+    }
+
+    const segmentProgress = (progress * (totalPoints - 1)) % 1;
+
+    return {
+      x: x1 + (x2 - x1) * segmentProgress,
+      y: y1 + (y2 - y1) * segmentProgress
+    };
   };
 
   // Modified check drawing accuracy to work with scaled points
@@ -359,17 +425,58 @@ const ShapesList = () => {
 
   const getCurrentTemplateStrokeWidth = (currentShape) => {
     if (!currentShape || currentPathIndex >= currentShape.shapes.length) {
-      return 4 * scaleFactor;
+      return TEMPLATE_LINE_WIDTH * scaleFactor;
     }
-    return (currentShape.shapes[currentPathIndex].strokeWidth || 4) * scaleFactor;
+    return TEMPLATE_LINE_WIDTH * scaleFactor;
   };
 
-  // Updated handlers to work with scaled points
+  // Add function to start continuous audio with overlapping
+  const startContinuousAudio = () => {
+    if (isAudioEnabled) {
+      // Create a new audio instance for overlapping
+      const newAudio = new Audio(chokeSound);
+      newAudio.play().catch(err => console.log('Audio play failed:', err));
+      
+      // Store the new audio instance
+      audioRef.current = newAudio;
+      
+      // Set up interval to play new audio before the current one ends
+      audioIntervalRef.current = setInterval(() => {
+        if (isDrawing) {
+          const nextAudio = new Audio(chokeSound);
+          nextAudio.play().catch(err => console.log('Audio play failed:', err));
+          audioRef.current = nextAudio;
+        }
+      }, 100); // Play new audio every 500ms for continuous effect
+    }
+  };
+
+  // Add function to stop continuous audio
+  const stopContinuousAudio = () => {
+    if (audioIntervalRef.current) {
+      clearInterval(audioIntervalRef.current);
+      audioIntervalRef.current = null;
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+  };
+
+   useEffect(()=>{
+    if(isDrawing){
+      startContinuousAudio();
+    }else{
+      stopContinuousAudio();
+    }
+   },[])
+  // Modify handleMouseDown
   const handleMouseDown = (e, currentShape) => {
-    if (isAnimating) return;
     setIsDrawing(true);
     setCursorMode("drawing");
     const pos = e.target.getStage().getPointerPosition();
+    
+    startContinuousAudio();
     
     const templateStrokeWidth = getCurrentTemplateStrokeWidth(currentShape);
     
@@ -388,8 +495,16 @@ const ShapesList = () => {
     }));
   };
 
+  // Modify handleMouseUp
+  const handleMouseUp = () => {
+    setIsDrawing(false);
+    setCursorMode(isAnimating ? "guiding" : "default");
+    stopContinuousAudio();
+  };
+
+  // Modify handleMouseMove to remove audio play
   const handleMouseMove = (e, currentShape) => {
-    if (!isDrawing || isAnimating) return;
+    if (!isDrawing) return;
     const stage = e.target.getStage();
     const point = stage.getPointerPosition();
     
@@ -428,10 +543,20 @@ const ShapesList = () => {
     }
   };
 
-  const handleMouseUp = () => {
-    setIsDrawing(false);
-    setCursorMode(isAnimating ? "guiding" : "default");
+  // Modify toggleAudio function
+  const toggleAudio = () => {
+    setIsAudioEnabled(!isAudioEnabled);
+    if (isAudioEnabled) {
+      stopContinuousAudio();
+    }
   };
+
+  // Add cleanup for audio
+  useEffect(() => {
+    return () => {
+      stopContinuousAudio();
+    };
+  }, []);
 
   // Modify calculateScore to include performance tracking
   const calculateScore = (currentShape) => {
@@ -553,10 +678,6 @@ const ShapesList = () => {
     resetStates();
   };
 
-  const getCurrentShape = () => {
-    if (currentShapeIndex >= SHAPES.length) return null;
-    return savedShapes.find(shape => shape.id === SHAPES[currentShapeIndex]);
-  };
 
   const getCurrentId = () => {
     return SHAPES[currentShapeIndex];
@@ -573,7 +694,6 @@ const ShapesList = () => {
     return (
       <div className="score-overlay">
         <div className="score-overlay-content">
-          <h2>Tracing Score</h2>
           <div className="score-result">
             <div className={`score-circle ${isSuccess ? 'success' : isError ? 'error' : ''}`}>
               <span className="score-number">{scoreData.score}%</span>
@@ -683,6 +803,7 @@ const ShapesList = () => {
       return (
         <div className="practice-area">
           <div className="loading-message">Loading shape data...</div>
+
         </div>
       );
     }
@@ -697,27 +818,52 @@ const ShapesList = () => {
                   className="guide-btn"
                   onClick={() => animateGuide(currentShape)}
                   disabled={isAnimating}
+                  title="Guide Me"
                 >
-                  {isAnimating ? "Guiding..." : "Guide Me"}
+                  <img src={require('../images/guideMe.png')} alt="Guide" />
                 </button>
                 <button 
                   className="reset-btn"
                   onClick={resetDrawing}
                   disabled={userLines.length === 0}
+                  title="Reset"
                 >
-                  Reset
+                  <img src={require('../images/rest.png')} alt="Reset" />
                 </button>
                 <button
                   className="score-btn"
                   onClick={() => calculateScore(currentShape)}
                   disabled={userLines.length === 0 || isScored}
+                  title="Calculate Score"
                 >
-                  Calculate Score
-                </button>  
+                  <img src={require('../images/calculate.png')} alt="Calculate" />
+                </button>
+                <div className="audio-controls">
+                  <button
+                    className={`audio-toggle-btn ${isAudioEnabled ? 'active' : ''}`}
+                    onClick={toggleAudio}
+                    title={isAudioEnabled ? 'Mute' : 'Unmute'}
+                  >
+                    {
+                      !isAudioEnabled ? <img src={require('../images/mute.png')} alt="Mute" /> : <img src={require('../images/unmute.png')} alt="Unmute" />
+                    }
+                  </button>
+  
+                </div>
+                <button 
+                  className="performance-button"
+                  onClick={onShowPerformance}
+                  title="View Letter Performance"
+                >
+                  <img src={require('../images/performance.png')} alt="Performance" />
+                </button>
               </div>
               
               <div className="speed-control">
-                <label htmlFor="speed-slider">Animation Speed: {getSpeedLabel()}</label>
+                <div className="speed-header">
+                  <img src={require('../images/speed.png')} alt="Speed" className="speed-icon" />
+                  <span>Animation Speed</span>
+                </div>
                 <div className="speed-slider-container">
                   <span className="speed-label">Slow</span>
                   <input
@@ -732,19 +878,12 @@ const ShapesList = () => {
                     disabled={isAnimating}
                   />
                   <span className="speed-label">Fast</span>
-                </div> 
-              </div> 
-                <button 
-              className="performance-button"
-              onClick={onShowPerformance}
-              title="View Letter Performance"
-              >
-              📊
-              </button>
-              <TamilAudioPlayer 
-                ref={audioPlayerRef}
-                selectedShapeId={currentShape?.id} 
-              /> 
+                </div>
+              </div>
+                <TamilAudioPlayer 
+                  ref={audioPlayerRef}
+                  selectedShapeId={currentShape?.id} 
+                /> 
 
             </>
           )}   
@@ -763,7 +902,7 @@ const ShapesList = () => {
             onTouchMove={(e) => handleMouseMove(e, currentShape)}
             onTouchEnd={handleMouseUp}
             className="practice-canvas"
-            style={{ cursor: getCursorStyle() }}
+            style={{ cursor: `url(${require('../images/chokeCursor.png')}) 0 0, auto` }}
           >
             <Layer>
               {currentShape?.shapes?.map((shape, i) => (
@@ -771,7 +910,7 @@ const ShapesList = () => {
                   key={`template-${i}`}
                   points={scalePoints(shape.points)}
                   stroke="rgba(250, 250, 250, 0.5)"
-                  strokeWidth={(shape.strokeWidth || 4) * scaleFactor}
+                  strokeWidth={TEMPLATE_LINE_WIDTH * scaleFactor}
                   lineJoin="round"
                   dash={[10 * scaleFactor, 10 * scaleFactor]}
                   tension={0.5}
@@ -784,7 +923,7 @@ const ShapesList = () => {
                   key={`user-${i}`}
                   points={line.points}
                   stroke="rgba(217, 239, 48, 0.7)"
-                  strokeWidth={line.strokeWidth || (4 * scaleFactor)}
+                  strokeWidth={line.strokeWidth || (TEMPLATE_LINE_WIDTH * scaleFactor)}
                   lineCap="round"
                   lineJoin="round"
                   tension={0.5}
@@ -830,20 +969,54 @@ const ShapesList = () => {
    }
   const renderGameComplete = () => {
     if (!showGameComplete) return null;
-    // setCurrentLevelCorrect({});
-    // setCurrentLevelMistakes({});
+
+    // Calculate average score across all letters
+    const calculateAverageScore = () => {
+      let totalScore = 0;
+      let letterCount = 0;
+
+      Object.entries(performanceData).forEach(([char, stats]) => {
+        if (stats.attempts > 0) {
+          const successRate = (stats.correct / stats.attempts) * 100;
+          totalScore += successRate;
+          letterCount++;
+        }
+      });
+
+      return letterCount > 0 ? Math.round(totalScore / letterCount) : 0;
+    };
+
+    const averageScore = calculateAverageScore();
+    const getScoreMessage = (score) => {
+      if (score >= 90) return "Outstanding! You're a Tamil writing master!";
+      if (score >= 75) return "Excellent! Your Tamil writing skills are very good!";
+      if (score >= 60) return "Good job! Keep practicing to improve further.";
+      if (score >= 50) return "Nice work! With more practice, you'll get even better.";
+      return "Keep practicing! You'll improve with time.";
+    };
+
     return (
       <div className="game-complete-overlay">
         <div className="game-complete-content">
           <h2>Game Complete!</h2>
-          <p>Congratulations! You've completed all the shapes!</p>
-          <button onClick={() => {
-            setCurrentShapeIndex(0);
-            setIsGameComplete(false);
-            setShowGameComplete(false);
-            resetStates();
-            resetCurrentLevelPerformanceData();
-          }}>Play Again</button>
+          <div className="final-score">
+            <div className="score-circle">
+              <span className="score-number">{averageScore}%</span>
+            </div>
+            <p className="score-message">{getScoreMessage(averageScore)}</p>
+          </div>
+          <button 
+            onClick={() => {
+              setCurrentShapeIndex(0);
+              setIsGameComplete(false);
+              setShowGameComplete(false);
+              resetStates();
+              resetCurrentLevelPerformanceData();
+            }}
+            className="play-again-btn"
+          >
+            Play Again
+          </button>
         </div>
       </div>
     );
@@ -928,8 +1101,7 @@ const ShapesList = () => {
           {/* <div className="shape-info">
             <h2>Shape {currentShapeIndex + 1} of {SHAPES.length}</h2>
           </div> */}
-    
-          
+  
             {renderPracticeArea({
               currentShape: getCurrentShape(),
               moveToNextShape,
@@ -959,4 +1131,4 @@ const ShapesList = () => {
   );
 };
 
-export default ShapesList; 
+export default ShapesList;

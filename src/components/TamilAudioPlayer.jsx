@@ -26,8 +26,16 @@ const TamilAudioPlayer = forwardRef(({ selectedShapeId }, ref) => {
     
     // Set up auto-play with delay if a shape is selected
     if (selectedShapeId) {
-      // We'll set up the auto-play after the audio is loaded
-      // (see handleAudioLoaded function)
+      try {
+        // Try to load the audio file
+        const audioPath = require(`../audio/Ezhutholi_MP3/${selectedShapeId}.mp3`);
+        if (audioRef.current) {
+          audioRef.current.src = audioPath;
+        }
+      } catch (err) {
+        console.warn(`Audio file not found for ${selectedShapeId}`);
+        setError(`Audio not available for ${formatLetterName(selectedShapeId)}`);
+      }
     }
     
     // Cleanup function
@@ -61,7 +69,10 @@ const TamilAudioPlayer = forwardRef(({ selectedShapeId }, ref) => {
       if (audioRef.current) {
         audioRef.current.play()
           .then(() => setIsPlaying(true))
-          .catch(err => console.error("Auto-play failed:", err));
+          .catch(err => {
+            console.error("Auto-play failed:", err);
+            setError("Could not play audio automatically");
+          });
       }
     }, 1000);
   };
@@ -69,15 +80,19 @@ const TamilAudioPlayer = forwardRef(({ selectedShapeId }, ref) => {
   // Handle audio load error
   const handleAudioError = () => {
     setAudioLoaded(false);
-    setError("Could not load audio for this letter.");
+    setError(`Audio not available for ${formatLetterName(selectedShapeId)}`);
   };
   
   // Play audio with reduced speed
   const playAudio = () => {
     if (audioRef.current && audioLoaded) {
       audioRef.current.currentTime = 0;
-      audioRef.current.play();
-      setIsPlaying(true);
+      audioRef.current.play()
+        .then(() => setIsPlaying(true))
+        .catch(err => {
+          console.error("Play failed:", err);
+          setError("Could not play audio");
+        });
     }
   };
   
@@ -107,38 +122,42 @@ const TamilAudioPlayer = forwardRef(({ selectedShapeId }, ref) => {
     <div className="bg-gray-100 mt-4 p-3 rounded-lg border border-gray-300">
       {selectedShapeId && (
         <>
-          <audio
-            ref={audioRef}
-            src={require(`../audio/Ezhutholi_MP3/${selectedShapeId}.mp3`)}
-            onLoadedData={handleAudioLoaded}
-            onError={handleAudioError}
-            onEnded={handleAudioEnded}
-            preload="auto"
-          />
+          {!error && (
+            <audio
+              ref={audioRef}
+              onLoadedData={handleAudioLoaded}
+              onError={handleAudioError}
+              onEnded={handleAudioEnded}
+              preload="auto"
+            />
+          )}
           
           <div className="flex items-center justify-between flex-wrap">
             <div className="text-lg font-medium text-gray-800 mr-4">
               {formatLetterName(selectedShapeId)}
             </div>
             
-            <button 
-              className={`flex items-center px-4 py-2 rounded-md text-white ${
-                isPlaying 
-                  ? 'bg-green-600 hover:bg-green-700' 
-                  : 'bg-blue-600 hover:bg-blue-700'
-              } disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors`}
-              onClick={playAudio}
-              disabled={!audioLoaded || isPlaying}
-            >
-              {isPlaying ? 'Playing...' : 'Listen'}
-              <span className="ml-2 text-lg">
-                {isPlaying ? '🔊' : '▶️'}
-              </span>
-            </button>
+            {!error && (
+              <button 
+                className={`flex items-center px-4 py-2 rounded-md text-white ${
+                  isPlaying 
+                    ? 'bg-green-600 hover:bg-green-700' 
+                    : 'bg-blue-600 hover:bg-blue-700'
+                } disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors`}
+                onClick={playAudio}
+                disabled={!audioLoaded || isPlaying}
+              >
+                {isPlaying ? 'Playing...' : 'Listen'}
+                <span className="ml-2 text-lg">
+                  {isPlaying ? '🔊' : '▶️'}
+                </span>
+              </button>
+            )}
           </div>
           
           {error && (
-            <div className="text-red-600 mt-2 text-sm w-full">
+            <div className="text-yellow-600 mt-2 text-sm w-full flex items-center">
+              <span className="mr-2">⚠️</span>
               {error}
             </div>
           )}
