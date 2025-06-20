@@ -55,7 +55,7 @@ module.exports = (_, argv) => ({
           filename: "audio/[name][ext]", // Output audio files to the "audio/" directory
         },
       },
-
+     
       // JavaScript (ES6 and JSX) files handling
       {
         test: /\.(ts|tsx|js|jsx)$/,

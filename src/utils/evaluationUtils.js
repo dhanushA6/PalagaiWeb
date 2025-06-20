@@ -2,9 +2,19 @@ import { getBoundingBox } from './drawingUtils';
 
 // Calculate area of overlap between two shapes
 export const calculateOverlap = (templatePoints, studentPoints, gridSize = 5, threshold = 5) => {
+  // Input validation
+  if (!templatePoints || !studentPoints || templatePoints.length < 4 || studentPoints.length < 4) {
+    return 0;
+  }
+  
   // Get bounding boxes
   const templateBB = getBoundingBox(templatePoints);
   const studentBB = getBoundingBox(studentPoints);
+  
+  // Validate bounding boxes
+  if (!templateBB || !studentBB || templateBB.width === 0 || templateBB.height === 0) {
+    return 0;
+  }
   
   // Calculate the combined area to create our grid
   const combinedBB = {
@@ -26,6 +36,13 @@ export const calculateOverlap = (templatePoints, studentPoints, gridSize = 5, th
   const height = combinedBB.maxY - combinedBB.minY;
   const cols = Math.ceil(width / gridSize);
   const rows = Math.ceil(height / gridSize);
+  
+  // Prevent excessive grid sizes
+  if (cols * rows > 100000) { // Limit grid size for performance
+    console.warn('Grid too large, reducing precision');
+    const newGridSize = Math.sqrt((width * height) / 50000);
+    return calculateOverlap(templatePoints, studentPoints, newGridSize, threshold);
+  }
   
   // Create grid masks for both shapes
   const templateMask = createShapeMask(templatePoints, combinedBB, gridSize, cols, rows, threshold);
@@ -57,7 +74,16 @@ export const calculateOverlap = (templatePoints, studentPoints, gridSize = 5, th
               if (ni >= 0 && ni < rows && nj >= 0 && nj < cols) {
                 const neighborIndex = ni * cols + nj;
                 if (studentMask[neighborIndex]) {
-                  hasNearbyStudentPoint = true;
+                  // Additional distance check for accuracy
+                  const cellX = combinedBB.minX + j * gridSize;
+                  const cellY = combinedBB.minY + i * gridSize;
+                  const neighborX = combinedBB.minX + nj * gridSize;
+                  const neighborY = combinedBB.minY + ni * gridSize;
+                  const distance = Math.sqrt((cellX - neighborX) ** 2 + (cellY - neighborY) ** 2);
+                  
+                  if (distance <= threshold) {
+                    hasNearbyStudentPoint = true;
+                  }
                 }
               }
             }
@@ -79,13 +105,17 @@ export const calculateOverlap = (templatePoints, studentPoints, gridSize = 5, th
 const createShapeMask = (points, boundingBox, gridSize, cols, rows, threshold) => {
   const mask = new Array(cols * rows).fill(false);
   
+  // Input validation
+  if (!points || points.length < 4) return mask;
+  
   // For each grid cell, check if it's inside or near the shape
   for (let i = 0; i < rows; i++) {
     for (let j = 0; j < cols; j++) {
-      const cellX = boundingBox.minX + j * gridSize;
-      const cellY = boundingBox.minY + i * gridSize;
+      const cellX = boundingBox.minX + j * gridSize + gridSize / 2; // Use cell center
+      const cellY = boundingBox.minY + i * gridSize + gridSize / 2;
       
       // Check if cell center is close to any line segment
+      // Fixed: iterate through pairs of consecutive points correctly
       for (let p = 0; p < points.length - 2; p += 2) {
         const x1 = points[p];
         const y1 = points[p + 1];
@@ -108,45 +138,40 @@ const isPointNearLineSegment = (px, py, x1, y1, x2, y2, threshold) => {
   const lineLength = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
   if (lineLength === 0) return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2) <= threshold;
   
-  // Calculate the perpendicular distance
-  const t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / (lineLength ** 2);
+  // Calculate the perpendicular distance using the correct formula
+  const t = Math.max(0, Math.min(1, ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / (lineLength ** 2)));
   
-  if (t < 0) {
-    // Point is beyond the start of the line
-    return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2) <= threshold;
-  } else if (t > 1) {
-    // Point is beyond the end of the line
-    return Math.sqrt((px - x2) ** 2 + (py - y2) ** 2) <= threshold;
-  } else {
-    // Perpendicular distance
-    const projX = x1 + t * (x2 - x1);
-    const projY = y1 + t * (y2 - y1);
-    return Math.sqrt((px - projX) ** 2 + (py - projY) ** 2) <= threshold;
-  }
+  // Find the closest point on the line segment
+  const projX = x1 + t * (x2 - x1);
+  const projY = y1 + t * (y2 - y1);
+  
+  // Calculate distance from point to closest point on line segment
+  const distance = Math.sqrt((px - projX) ** 2 + (py - projY) ** 2);
+  return distance <= threshold;
 };
 
 // Calculate stroke order similarity
 export const calculateStrokeOrder = (templateLines, studentLines) => {
-  if (!templateLines.length || !studentLines.length) return 0;
+  if (!templateLines || !studentLines || !templateLines.length || !studentLines.length) return 0;
   
-  // Check if strokes were drawn in a similar order
   const templateCount = templateLines.length;
   const studentCount = studentLines.length;
-  console.log(templateCount, studentCount)
-  // If there's a big difference in number of strokes, penalize
-  // if (Math.abs(templateCount - studentCount) > templateCount * 0.5) {
-  //   return 50; // Base score if stroke count is very different
-  // }
+  
+  // If stroke counts are very different, apply penalty but don't return early
+  const strokeCountPenalty = Math.abs(templateCount - studentCount) / Math.max(templateCount, studentCount);
   
   // Score based on start point similarity of corresponding strokes
   let totalScore = 0;
   const minCount = Math.min(templateCount, studentCount);
+  
+  if (minCount === 0) return 0;
   
   for (let i = 0; i < minCount; i++) {
     const templateStroke = templateLines[i];
     const studentStroke = studentLines[i];
     
     if (templateStroke && studentStroke && 
+        templateStroke.points && studentStroke.points &&
         templateStroke.points.length >= 2 && studentStroke.points.length >= 2) {
       
       // Compare start points of the strokes
@@ -162,35 +187,51 @@ export const calculateStrokeOrder = (templateLines, studentLines) => {
       );
       
       // Convert distance to a score (closer is better)
-      const maxDistance = 100; // Maximum expected distance
+      // Use adaptive max distance based on drawing size
+      const templateBB = getBoundingBox([templateStartX, templateStartY]);
+      const maxDistance = Math.max(100, Math.min(templateBB.width, templateBB.height) * 0.3);
       const pointScore = Math.max(0, 100 - (distance / maxDistance) * 100);
       totalScore += pointScore;
     }
   }
   
-  return totalScore / minCount;
+  const averageScore = totalScore / minCount;
+  // Apply stroke count penalty
+  return Math.max(0, averageScore * (1 - strokeCountPenalty * 0.5));
 };
 
 // Calculate proportion accuracy
 export const calculateProportion = (templatePoints, studentPoints) => {
+  if (!templatePoints || !studentPoints || templatePoints.length < 4 || studentPoints.length < 4) {
+    return 0;
+  }
+  
   const templateBB = getBoundingBox(templatePoints);
   const studentBB = getBoundingBox(studentPoints);
+  
+  if (!templateBB || !studentBB || templateBB.width === 0 || templateBB.height === 0 || 
+      studentBB.width === 0 || studentBB.height === 0) {
+    return 0;
+  }
   
   // Calculate aspect ratios
   const templateRatio = templateBB.width / templateBB.height;
   const studentRatio = studentBB.width / studentBB.height;
   
-  // Compare ratios (closer to 1 is better)
-  const ratioDifference = Math.abs(templateRatio - studentRatio);
-  // Convert to score (0-100)
-  const temp = Math.max(0, 100 - (ratioDifference * 100));
-  return temp > 0 ? temp : 0;
+  // Compare ratios - use relative difference instead of absolute
+  const maxRatio = Math.max(templateRatio, studentRatio);
+  const minRatio = Math.min(templateRatio, studentRatio);
+  const ratioDifference = (maxRatio - minRatio) / maxRatio;
+  
+  // Convert to score (0-100) - closer ratios get higher scores
+  const proportionScore = Math.max(0, 100 * (1 - ratioDifference));
+  return proportionScore;
 };
-
 
 // Calculate start and end point accuracy
 export const calculateEndpointAccuracy = (templateLine, studentLine) => {
   if (!templateLine || !studentLine || 
+      !templateLine.points || !studentLine.points ||
       templateLine.points.length < 2 || studentLine.points.length < 2) {
     return 0;
   }
@@ -219,8 +260,14 @@ export const calculateEndpointAccuracy = (templateLine, studentLine) => {
     (templateEnd.y - studentEnd.y) ** 2
   );
   
+  // Use adaptive max distance based on line length
+  const templateLineLength = Math.sqrt(
+    (templateEnd.x - templateStart.x) ** 2 + 
+    (templateEnd.y - templateStart.y) ** 2
+  );
+  const maxDistance = Math.max(50, templateLineLength * 0.1); // 10% of line length
+  
   // Convert to score (closer is better)
-  const maxDistance = 100; // Maximum expected distance
   const startScore = Math.max(0, 100 - (startDistance / maxDistance) * 100);
   const endScore = Math.max(0, 100 - (endDistance / maxDistance) * 100);
   
@@ -235,19 +282,27 @@ export const generateHeatmapData = (templateLines, studentLines, width, height) 
     return [];
   }
 
+  // Validate input lines
+  if (!templateLines || !Array.isArray(templateLines)) {
+    console.warn('Invalid template lines for heatmap');
+    return [];
+  }
+
   // Ensure dimensions are reasonable
   const maxDimension = 1000; // Maximum allowed dimension
-  const safeWidth = Math.min(width, maxDimension);
-  const safeHeight = Math.min(height, maxDimension);
+  const safeWidth = Math.min(Math.floor(width), maxDimension);
+  const safeHeight = Math.min(Math.floor(height), maxDimension);
 
   try {
     const heatmapData = new Array(safeWidth * safeHeight).fill(0);
     
-    // For each point in the template, calculate distance to closest student line
+    // For each point in the template, increment the heatmap
     templateLines.forEach(templateLine => {
-      if (!templateLine || !templateLine.points) return;
+      if (!templateLine || !templateLine.points || !Array.isArray(templateLine.points)) return;
       
       for (let i = 0; i < templateLine.points.length; i += 2) {
+        if (i + 1 >= templateLine.points.length) break;
+        
         const x = Math.floor(templateLine.points[i]);
         const y = Math.floor(templateLine.points[i + 1]);
         
@@ -269,11 +324,20 @@ export const generateHeatmapData = (templateLines, studentLines, width, height) 
 
 // Calculate overall accuracy score
 export const calculateAccuracy = (templateLines, studentLines) => {
-  // Extract all points from template and student lines
-  const templatePoints = templateLines.flatMap(line => line.points);
-  const studentPoints = studentLines.flatMap(line => line.points);
+  // Input validation
+  if (!templateLines || !studentLines || !Array.isArray(templateLines) || !Array.isArray(studentLines)) {
+    return { score: 0, overlap: 0, strokeOrder: 0, proportion: 0 };
+  }
   
-  if (templatePoints.length < 2 || studentPoints.length < 2) {
+  // Extract all points from template and student lines
+  const templatePoints = templateLines.flatMap(line => 
+    line && line.points && Array.isArray(line.points) ? line.points : []
+  );
+  const studentPoints = studentLines.flatMap(line => 
+    line && line.points && Array.isArray(line.points) ? line.points : []
+  );
+  
+  if (templatePoints.length < 4 || studentPoints.length < 4) {
     return { score: 0, overlap: 0, strokeOrder: 0, proportion: 0 };
   }
   
@@ -282,13 +346,19 @@ export const calculateAccuracy = (templateLines, studentLines) => {
   const strokeOrder = calculateStrokeOrder(templateLines, studentLines);
   const proportion = calculateProportion(templatePoints, studentPoints);
   
+  // Ensure all scores are valid numbers
+  const safeOverlap = isNaN(overlap) ? 0 : Math.max(0, Math.min(100, overlap));
+  const safeStrokeOrder = isNaN(strokeOrder) ? 0 : Math.max(0, Math.min(100, strokeOrder));
+  const safeProportion = isNaN(proportion) ? 0 : Math.max(0, Math.min(100, proportion));
+  
   // Calculate final score with weightings
-  const finalScore = (overlap * 0.7) + (strokeOrder * 0.2) + (proportion * 0.1);
+  // Adjusted weights to sum to 1.0
+  const finalScore = (safeOverlap * 0.7) + (safeStrokeOrder * 0.2) + (safeProportion * 0.1);
   
   return {
-    score: Math.round(finalScore),
-    overlap: Math.round(overlap),
-    strokeOrder: Math.round(strokeOrder),
-    proportion: Math.round(proportion)
+    score: Math.round(Math.max(0, Math.min(100, finalScore))),
+    overlap: Math.round(safeOverlap),
+    strokeOrder: Math.round(safeStrokeOrder),
+    proportion: Math.round(safeProportion)
   };
 };

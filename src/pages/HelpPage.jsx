@@ -1,22 +1,26 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import "./HelpPage.css";
+import "../styles/HelpPage.css";
 import CloseIcon from "../images/Close_Icon.png";
+import HelpPageImage from "../images/Help_Page.jpg";  // import image directly
 
 const HelpPage = () => {
   const navigate = useNavigate();
 
   const handleBack = () => {
-    navigate("/"); // Redirect back to the home page
+    navigate("/");
   };
 
   return (
     <div className="help-container">
+      <img src={HelpPageImage} alt="Help Page" className="help-background" />
+      
       <div className="back-button" onClick={handleBack}>
-      <img src={CloseIcon} alt="Back" />      </div>
-      {/* Add your help content here */}
+        <img src={CloseIcon} alt="Back" />
+      </div>
+
       <div className="help-content">
-        {/* <p>This is the help page content.</p> */}
+        {/* Add your help content here */}
       </div>
     </div>
   );

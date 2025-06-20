@@ -1,0 +1,49 @@
+.stats-bar__item {
+  background-color: rgba(255, 255, 255, 0.9);
+  border: 2px solid #000;
+  border-radius: 12px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 85px;
+  justify-content: center;
+  transition: all 0.3s ease;
+  height: auto;
+}
+
+.stats-bar__item:hover {
+  background-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(-2px);
+}
+
+.stats-bar__icon {
+  width: 25px;
+  height: 25px;
+  filter: invert(100%);
+}
+
+.stats-bar__label {
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.stats-bar__value {
+  font-size: 18px;
+  font-weight: bold;
+  text-align: center;
+}
+
+.stats-bar__value--critical {
+  color: #ff6b6b;
+  animation: pulse 1s infinite alternate;
+}
+
+@keyframes pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.6;
+  }
+} 

@@ -1,0 +1,48 @@
+body{
+    overflow: hidden;
+}
+
+.task-metrics {
+  margin: 20px 0;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.task-metrics h3 {
+  color: #fff;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.metrics-table {
+  overflow-x: auto;
+}
+
+.metrics-table table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.metrics-table th,
+.metrics-table td {
+  padding: 12px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.metrics-table th {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-weight: 600;
+}
+
+.metrics-table td {
+  color: #fff;
+}
+
+.metrics-table tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}

@@ -2,20 +2,28 @@ import React, { useState, useEffect } from 'react';
 import '../styles/PerformanceOverlay.css';
 import moreDetailsIcon from '../images/moredetails.png';
 import lessDetailsIcon from '../images/lessdetails.png';
+import closeButton from '../images/closeButton.png'
 import { convertPerformanceDataToTamil, tamilMapping } from '../utils/tamilMapping';
 
-const PerformanceOverlay = ({ onClose, currentLevelMistakes = {}, currentLevelCorrect = {} }) => {
+const PerformanceOverlay = ({ 
+  onClose, 
+  performanceData,
+  currentLevelMistakes,
+  currentLevelCorrect,
+  onUpdate,
+  letterData,
+  setLetterData
+}) => {
   const [selectedSeries, setSelectedSeries] = useState('vowels');
-  const [performanceData, setPerformanceData] = useState({});
   const [showDetails, setShowDetails] = useState(false);
 
   // Tamil translations for UI text
   const tamilLabels = {
     // Page title and headers
-    letterPerformance: "எழுத்தின் வலிமை",
+    letterPerformance: "எழுதல் வலிமை",
     selectSeries: "வரிசையைத் தேர்வு செய்க",
-    currentLevelMistakes: "தற்போதைய நிலை பிழைகள்",
-    currentLevelCorrect: "தற்போதைய நிலை சரியான எழுத்துக்கள்",
+    currentLevelMistakes: "அண்மைப் பிழைகள்",
+    currentLevelCorrect: "அண்மை வலிமை",
     moreDetails: "மேலும் விவரங்கள்",
     lessDetails: "குறைவான விவரங்கள்",
     // Series names
@@ -42,7 +50,7 @@ const PerformanceOverlay = ({ onClose, currentLevelMistakes = {}, currentLevelCo
     naSeries2: "ன வரிசை",
 
     // Color legend and stats
-    accuracyScale: "துல்லியத்தன் அளவுகோல்",
+    accuracyScale: "துல்லிய நிற அளவை",
     hoverTip: "சதவீதங்களைக் காண அளவுகோலின் மேல் நகர்த்தவும்",
     
     // Buttons and controls
@@ -50,19 +58,11 @@ const PerformanceOverlay = ({ onClose, currentLevelMistakes = {}, currentLevelCo
   };
 
   useEffect(() => {
-    const storedData = localStorage.getItem('tamilLetterPerformance');
-    if (storedData) {
-      try {
-        const parsedData = JSON.parse(storedData);
-        // Convert the stored English keys to Tamil characters
-        const convertedData = convertPerformanceDataToTamil(parsedData);
+    if (letterData) {
+      const convertedData = convertPerformanceDataToTamil(letterData);
         setPerformanceData(convertedData);
-      } catch (error) {
-        console.error('Error parsing performance data:', error);
-        setPerformanceData({});
-      }
     }
-  }, []);
+  }, [letterData]);
 
   const getAccuracyColor = (correct, attempts) => {
     if (attempts === 0) return '#e0e0e0'; // Grey for unexplored letters
@@ -187,39 +187,38 @@ const PerformanceOverlay = ({ onClose, currentLevelMistakes = {}, currentLevelCo
       <div className="current-level-stats" style={{ display: showDetails ? 'none' : 'block' }}>
         <div className="stats-section mistakes">
           <h3>
-            <span className="tamil-letter">தற்போதைய நிலை பிழைகள்</span>
-            <span className="tamil-subtitle">(தற்போதைய நிலை பிழைகள்)</span>
+            <span className="tamil-letter">அண்மைப் பிழைகள்
+            </span>
           </h3>
           {topMistakes.length > 0 ? (
             <div className="mistakes-grid">
               {topMistakes.map(([letter, count]) => (
                 <div key={letter} className="mistake-box">
-                  <div className="letter">{tamilMapping[letter]}</div>
+                  <div className="letter">{letter}</div>
                   <div className="count">{count} முறை</div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="no-mistakes">பிழைகள் எதுவும் இல்லை</div>
+            <div className="no-mistakes"> இல்லை</div>
           )}
         </div>
 
         <div className="stats-section correct">
           <h3>
-            <span className="tamil-letter">தற்போதைய நிலை சரியான எழுத்துக்கள்</span>
-            <span className="tamil-subtitle">(தற்போதைய நிலை சரியான எழுத்துக்கள்)</span>
+            <span className="tamil-letter">அண்மை வலிமை            </span>
           </h3>
           {topCorrect.length > 0 ? (
             <div className="correct-grid">
               {topCorrect.map(([letter, count]) => (
                 <div key={letter} className="correct-box">
-                  <div className="letter">{tamilMapping[letter]}</div>
+                  <div className="letter">{letter}</div>
                   <div className="count">{count} முறை</div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="no-correct">சரியான எழுத்துக்கள் எதுவும் இல்லை</div>
+            <div className="no-correct">இல்லை</div>
           )}
         </div>
       </div>
@@ -230,10 +229,6 @@ const PerformanceOverlay = ({ onClose, currentLevelMistakes = {}, currentLevelCo
     <div className="performance-overlay">
       <div className="performance-content">
         <div className="performance-header">
-          <h2>{tamilLabels.letterPerformance}</h2>
-          <button className="close-button" onClick={onClose}>{tamilLabels.close}</button>
-        </div>
-        
         <button 
           className="details-toggle"
           onClick={() => setShowDetails(!showDetails)}
@@ -243,6 +238,13 @@ const PerformanceOverlay = ({ onClose, currentLevelMistakes = {}, currentLevelCo
             alt={showDetails ? tamilLabels.lessDetails : tamilLabels.moreDetails}
           />
         </button>
+          <h2>{tamilLabels.letterPerformance}</h2>
+          <button className="close-button1" onClick={onClose}> 
+            <img src={closeButton} alt="" />
+          </button>
+        </div>
+        
+       
         
         {renderCurrentLevelStats()}
         
